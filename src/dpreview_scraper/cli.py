@@ -109,7 +109,15 @@ async def _run_scraper(
         # Scrape search results
         console.print("[bold]Searching for cameras...[/bold]")
         search_scraper = SearchScraper(browser, rate_limiter, after_date=after_date)
-        search_results = await search_scraper.scrape_all_pages()
+
+        # Calculate max_pages based on limit to avoid unnecessary searching
+        # Each page has ~50 cameras, so add buffer for filtering
+        max_pages = None
+        if limit:
+            max_pages = (limit // 50) + 2  # +2 for buffer after date filtering
+            logger.info(f"Limiting search to ~{max_pages} pages for {limit} cameras")
+
+        search_results = await search_scraper.scrape_all_pages(max_pages=max_pages)
 
         if not search_results:
             console.print("[yellow]No cameras found![/yellow]")
