@@ -65,10 +65,16 @@ class YAMLWriter:
 
 # Custom YAML representer for better formatting
 def _str_representer(dumper: yaml.Dumper, data: str) -> yaml.Node:
-    """Custom string representer for multiline strings."""
+    """Custom string representer for multiline strings and empty strings."""
     if "\n" in data:
+        # Use literal style for multiline strings
         return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
-    return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+    elif data == "":
+        # Use double quotes for empty strings to match sample format
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style='"')
+    else:
+        # Default style for regular strings
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data)
 
 
 # Register custom representer

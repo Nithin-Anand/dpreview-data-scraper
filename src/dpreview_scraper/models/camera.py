@@ -38,18 +38,35 @@ class Camera(BaseModel):
 
     def to_yaml_dict(self) -> dict:
         """Convert to dict preserving field order for YAML output."""
+        def make_relative_url(url: str) -> str:
+            """Convert absolute URL to relative path."""
+            if not url:
+                return url
+            # Strip domain from DPReview URLs
+            for domain in [
+                "https://www.dpreview.com",
+                "https://m.dpreview.com",
+                "https://1.img-dpreview.com",
+                "https://2.img-dpreview.com",
+                "https://3.img-dpreview.com",
+                "https://4.img-dpreview.com",
+            ]:
+                if url.startswith(domain):
+                    return url[len(domain):]
+            return url
+
         data = {
             "DPRReviewArchiveURL": self.DPRReviewArchiveURL,
             "ProductCode": self.ProductCode,
             "Award": self.Award,
-            "ImageURL": self.ImageURL,
+            "ImageURL": make_relative_url(self.ImageURL),
             "Name": self.Name,
             "ShortSpecs": self.ShortSpecs,
             "ReviewScore": self.ReviewScore,
-            "URL": self.URL,
+            "URL": make_relative_url(self.URL),
             "ReviewData": {
                 "ExecutiveSummary": self.ReviewData.ExecutiveSummary,
-                "ProductPhotos": self.ReviewData.ProductPhotos,
+                "ProductPhotos": [make_relative_url(p) for p in self.ReviewData.ProductPhotos],
                 "ReviewSummary": {
                     "GoodFor": self.ReviewData.ReviewSummary.GoodFor,
                     "NotSoGoodFor": self.ReviewData.ReviewSummary.NotSoGoodFor,
