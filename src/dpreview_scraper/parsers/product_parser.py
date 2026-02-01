@@ -447,46 +447,24 @@ def _parse_review_page(soup: BeautifulSoup) -> tuple:
                 except (ValueError, AttributeError):
                     continue
 
-    # Try to extract Good For / Not So Good For from verdict/conclusion section
-    verdict_selectors = [
-        "div.verdict",
-        "div.conclusion",
-        "div.reviewConclusion",
-        "div.pros-cons",
-    ]
+    # Extract Good For / Not So Good For using DPReview-specific selectors
+    # DPReview uses: <tr class="suitability goodFor"><td>...<div class="text">content</div>
+    good_for_elem = soup.select_one("tr.suitability.goodFor div.text")
+    if good_for_elem:
+        good_for = good_for_elem.get_text(strip=True)
+        logger.debug(f"Found 'Good For': {good_for[:50]}...")
 
-    for selector in verdict_selectors:
-        verdict_section = soup.select_one(selector)
-        if verdict_section:
-            # Look for pros/good section
-            pros_selectors = ["div.pros", "div.goodFor", "ul.pros", "[class*='good']"]
-            for pros_sel in pros_selectors:
-                pros_elem = verdict_section.select_one(pros_sel)
-                if pros_elem:
-                    good_for = pros_elem.get_text(strip=True)
-                    logger.debug(f"Found 'Good For' with selector: {pros_sel}")
-                    break
+    not_good_elem = soup.select_one("tr.suitability.notGoodFor div.text")
+    if not_good_elem:
+        not_so_good_for = not_good_elem.get_text(strip=True)
+        logger.debug(f"Found 'Not So Good For': {not_so_good_for[:50]}...")
 
-            # Look for cons/bad section
-            cons_selectors = ["div.cons", "div.notSoGoodFor", "ul.cons", "[class*='bad']", "[class*='not-so-good']"]
-            for cons_sel in cons_selectors:
-                cons_elem = verdict_section.select_one(cons_sel)
-                if cons_elem:
-                    not_so_good_for = cons_elem.get_text(strip=True)
-                    logger.debug(f"Found 'Not So Good For' with selector: {cons_sel}")
-                    break
-
-            # Look for conclusion text
-            conclusion_selectors = ["div.conclusion-text", "p.conclusion", "div.final-verdict"]
-            for concl_sel in conclusion_selectors:
-                concl_elem = verdict_section.select_one(concl_sel)
-                if concl_elem:
-                    conclusion = concl_elem.get_text(strip=True)
-                    logger.debug(f"Found conclusion with selector: {concl_sel}")
-                    break
-
-            if good_for or not_so_good_for or conclusion:
-                break
+    # Extract conclusion from summary section
+    # DPReview uses: <tr class="summary"><td><div class="summary">text</div>
+    conclusion_elem = soup.select_one("tr.summary div.summary")
+    if conclusion_elem:
+        conclusion = conclusion_elem.get_text(strip=True)
+        logger.debug(f"Found conclusion: {conclusion[:50]}...")
 
     review_summary = ReviewSummary(
         GoodFor=good_for,

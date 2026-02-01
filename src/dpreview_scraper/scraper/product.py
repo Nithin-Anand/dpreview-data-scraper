@@ -1,8 +1,9 @@
 """Product page scraper."""
 
+import asyncio
 from typing import Optional
 from bs4 import BeautifulSoup
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Page
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from dpreview_scraper.config import settings
@@ -58,6 +59,58 @@ class ProductScraper:
         except Exception as e:
             logger.debug(f"Error extracting review URL for {product_code}: {e}")
             return None
+
+    async def _wait_for_cloudflare_challenge(
+        self, page: Page, max_wait_seconds: int = 30
+    ) -> bool:
+        """Wait for Cloudflare challenge to complete.
+
+        Args:
+            page: Playwright page
+            max_wait_seconds: Maximum time to wait for challenge
+
+        Returns:
+            True if challenge resolved, False if still blocked
+        """
+        try:
+            # Check if we're on a Cloudflare challenge page
+            title = await page.title()
+            if "just a moment" not in title.lower():
+                logger.debug("No Cloudflare challenge detected")
+                return True
+
+            logger.info(f"Cloudflare challenge detected, waiting up to {max_wait_seconds}s...")
+
+            # Add some human-like behavior
+            await asyncio.sleep(2)
+
+            # Scroll down slowly to simulate reading
+            try:
+                await page.evaluate("window.scrollTo({ top: 100, behavior: 'smooth' })")
+                await asyncio.sleep(1)
+            except Exception:
+                pass
+
+            # Wait for title to change (indicating challenge completed)
+            start_time = asyncio.get_event_loop().time()
+            check_interval = 1  # Check every second
+
+            while (asyncio.get_event_loop().time() - start_time) < max_wait_seconds:
+                await asyncio.sleep(check_interval)
+
+                current_title = await page.title()
+                if "just a moment" not in current_title.lower():
+                    logger.info("Cloudflare challenge resolved!")
+                    # Wait a bit more for page to fully load
+                    await asyncio.sleep(2)
+                    return True
+
+            logger.warning(f"Cloudflare challenge did not resolve after {max_wait_seconds}s")
+            return False
+
+        except Exception as e:
+            logger.debug(f"Error waiting for Cloudflare challenge: {e}")
+            return False
 
     @retry(
         stop=stop_after_attempt(3),
@@ -126,16 +179,33 @@ class ProductScraper:
 
                     try:
                         await self.rate_limiter.acquire()
-                        await page.goto(review_url, wait_until="networkidle", timeout=settings.browser_timeout)
+
+                        # Use domcontentloaded instead of networkidle for faster initial load
+                        await page.goto(review_url, wait_until="domcontentloaded", timeout=60000)
+
+                        # Wait for Cloudflare challenge to resolve
+                        challenge_resolved = await self._wait_for_cloudflare_challenge(page, max_wait_seconds=30)
+
+                        if not challenge_resolved:
+                            logger.warning(f"Cloudflare challenge not resolved for {search_result.product_code}")
+                            # Continue anyway, might have partial content
 
                         # Wait for review content
                         try:
                             await page.wait_for_selector("div.article", timeout=10000)
+                            logger.debug(f"Review article content found for {search_result.product_code}")
                         except PlaywrightTimeoutError:
-                            logger.debug(f"Timeout waiting for review content: {search_result.product_code}")
+                            logger.debug(f"Timeout waiting for review article: {search_result.product_code}")
 
                         review_html = await page.content()
-                        logger.debug(f"Successfully fetched review page for {search_result.product_code}")
+
+                        # Verify we actually got review content and not Cloudflare page
+                        if "just a moment" in (await page.title()).lower():
+                            logger.warning(f"Still on Cloudflare page for {search_result.product_code}")
+                            review_html = None
+                        else:
+                            logger.debug(f"Successfully fetched review page for {search_result.product_code}")
+
                     except Exception as e:
                         logger.debug(f"No review page available for {search_result.product_code}: {e}")
                 else:
