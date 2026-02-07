@@ -68,7 +68,7 @@ class YAMLWriter:
 class CustomDumper(yaml.SafeDumper):
     """Custom YAML dumper with proper indentation and formatting.
 
-    Inherits from SafeDumper which uses double quotes (matching sample format).
+    Inherits from SafeDumper with custom quote handling.
     """
 
     def increase_indent(self, flow: bool = False, indentless: bool = False):
@@ -85,14 +85,17 @@ def _str_representer(dumper: yaml.Dumper, data: str) -> yaml.Node:
     elif data == "":
         # Use double quotes for empty strings to match sample format
         return dumper.represent_scalar("tag:yaml.org,2002:str", data, style='"')
+    elif len(data) > 100:
+        # Long strings (like ExecutiveSummary) - use single quotes to match sample format
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="'")
+    elif data.isdigit() or (data.replace('.', '', 1).replace('-', '', 1).isdigit()):
+        # Numbers as strings - use double quotes
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style='"')
+    elif data.lower() in ('yes', 'no', 'true', 'false', 'null', 'on', 'off'):
+        # YAML keywords - use double quotes
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style='"')
     else:
-        # Use double quotes for strings that need quoting, plain style otherwise
-        # Let YAML decide but prefer double quotes when quoting is needed
-        if dumper.default_style:
-            return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=dumper.default_style)
-        # Check if the string needs quoting (is a YAML keyword or contains special chars)
-        if data.lower() in ('yes', 'no', 'true', 'false', 'null', 'on', 'off'):
-            return dumper.represent_scalar("tag:yaml.org,2002:str", data, style='"')
+        # Other strings - plain style when safe, otherwise let YAML decide
         return dumper.represent_scalar("tag:yaml.org,2002:str", data)
 
 

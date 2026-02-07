@@ -40,6 +40,22 @@ class Camera(BaseModel):
     # Internal fields (not written to YAML)
     review_url: Optional[str] = Field(default=None, exclude=True)
 
+    def _format_review_summary(self) -> Optional[dict]:
+        """Format ReviewSummary, returning None if all fields are empty."""
+        good_for = self.ReviewData.ReviewSummary.GoodFor
+        not_so_good_for = self.ReviewData.ReviewSummary.NotSoGoodFor
+        conclusion = self.ReviewData.ReviewSummary.Conclusion
+
+        # If all fields are empty, return None (will be written as 'null' in YAML)
+        if not good_for and not not_so_good_for and not conclusion:
+            return None
+
+        return {
+            "GoodFor": good_for,
+            "NotSoGoodFor": not_so_good_for,
+            "Conclusion": conclusion,
+        }
+
     def to_yaml_dict(self) -> dict:
         """Convert to dict preserving field order for YAML output."""
         import re
@@ -76,11 +92,7 @@ class Camera(BaseModel):
             "ReviewData": {
                 "ExecutiveSummary": self.ReviewData.ExecutiveSummary,
                 "ProductPhotos": [make_relative_url(p) for p in self.ReviewData.ProductPhotos],
-                "ReviewSummary": {
-                    "GoodFor": self.ReviewData.ReviewSummary.GoodFor,
-                    "NotSoGoodFor": self.ReviewData.ReviewSummary.NotSoGoodFor,
-                    "Conclusion": self.ReviewData.ReviewSummary.Conclusion,
-                },
+                "ReviewSummary": self._format_review_summary(),
                 "ASIN": self.ReviewData.ASIN,
             },
             "Specs": dict(sorted(self.Specs.model_dump(exclude_none=False).items())),
