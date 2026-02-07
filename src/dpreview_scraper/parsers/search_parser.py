@@ -1,10 +1,38 @@
 """Parse DPReview search results."""
 
+import re
 from typing import List
 from bs4 import BeautifulSoup
 
 from dpreview_scraper.models.camera import SearchResult
 from dpreview_scraper.utils.logging import logger
+
+# Precompiled regex for whitespace normalization
+MULTIPLE_SPACES_PATTERN = re.compile(r'\s+')
+# Pattern to remove spaces before inch/quote symbols
+SPACE_BEFORE_INCH_PATTERN = re.compile(r'\s+(″|"|\'\'|")')
+# Pattern to remove spaces before closing parentheses
+SPACE_BEFORE_PAREN_PATTERN = re.compile(r'\s+\)')
+
+
+def _normalize_whitespace(text: str) -> str:
+    """Normalize whitespace in text by collapsing multiple spaces to single space.
+
+    Also removes spaces before inch symbols (″) and closing parentheses.
+
+    Args:
+        text: Text to normalize
+
+    Returns:
+        Text with normalized whitespace
+    """
+    # First collapse multiple spaces
+    text = MULTIPLE_SPACES_PATTERN.sub(' ', text)
+    # Remove spaces before inch/quote symbols
+    text = SPACE_BEFORE_INCH_PATTERN.sub(r'\1', text)
+    # Remove spaces before closing parentheses
+    text = SPACE_BEFORE_PAREN_PATTERN.sub(')', text)
+    return text.strip()
 
 
 def parse_search_results(html: str) -> List[SearchResult]:
@@ -68,12 +96,22 @@ def parse_search_results(html: str) -> List[SearchResult]:
             if date_elem:
                 announced = date_elem.get_text(strip=True)
 
+            # Extract short specs (pipe-separated list)
+            short_specs = []
+            short_specs_elem = element.select_one("td.info div.specs div.shortProductSpecs")
+            if short_specs_elem:
+                # Get text content, preserving special characters
+                specs_text = short_specs_elem.get_text(separator=' ', strip=True)
+                # Split by pipe and clean up each spec, normalizing whitespace
+                short_specs = [_normalize_whitespace(spec) for spec in specs_text.split("|") if spec.strip()]
+
             result = SearchResult(
                 product_code=product_code,
                 name=name,
                 url=url,
                 image_url=image_url,
                 announced=announced,
+                short_specs=short_specs,
             )
             results.append(result)
             logger.debug(f"Parsed search result: {product_code}")

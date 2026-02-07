@@ -1,6 +1,8 @@
 """Wayback Machine archive integration."""
 
 from typing import Optional
+import asyncio
+import time
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -14,9 +16,13 @@ class ArchiveManager:
     WAYBACK_AVAILABILITY_API = "https://archive.org/wayback/available"
     WAYBACK_SAVE_API = "https://web.archive.org/save"
 
+    # Rate limiting: minimum seconds between archive creation requests
+    SAVE_REQUEST_DELAY = 5.0
+
     def __init__(self):
         """Initialize archive manager."""
         self.client = httpx.AsyncClient(timeout=30.0)
+        self._last_save_time: Optional[float] = None
 
     async def close(self) -> None:
         """Close HTTP client."""
@@ -79,8 +85,19 @@ class ArchiveManager:
         if not url.startswith("http"):
             url = f"{settings.base_url}{url}"
 
+        # Rate limiting: ensure minimum delay between save requests
+        if self._last_save_time is not None:
+            elapsed = time.time() - self._last_save_time
+            if elapsed < self.SAVE_REQUEST_DELAY:
+                wait_time = self.SAVE_REQUEST_DELAY - elapsed
+                logger.debug(f"Rate limiting: waiting {wait_time:.1f}s before archive request")
+                await asyncio.sleep(wait_time)
+
         try:
             logger.info(f"Requesting archive for: {url}")
+
+            # Update last save time before making request
+            self._last_save_time = time.time()
 
             response = await self.client.get(
                 f"{self.WAYBACK_SAVE_API}/{url}",
@@ -92,6 +109,9 @@ class ArchiveManager:
                 archive_url = str(response.url)
                 logger.info(f"Archived successfully: {archive_url}")
                 return archive_url
+            elif response.status_code == 429:
+                logger.warning(f"Rate limited by Wayback Machine (429). Consider increasing SAVE_REQUEST_DELAY.")
+                return None
 
             logger.warning(f"Archive request failed with status: {response.status_code}")
             return None

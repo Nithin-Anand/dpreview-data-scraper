@@ -37,9 +37,11 @@ class YAMLWriter:
 
         # Write YAML with custom formatting
         with open(filepath, "w", encoding="utf-8") as f:
+            # Use custom dumper for proper formatting
             yaml.dump(
                 data,
                 f,
+                Dumper=CustomDumper,
                 default_flow_style=False,
                 allow_unicode=True,
                 sort_keys=False,
@@ -63,6 +65,17 @@ class YAMLWriter:
         return filepath.exists()
 
 
+class CustomDumper(yaml.SafeDumper):
+    """Custom YAML dumper with proper indentation and formatting.
+
+    Inherits from SafeDumper which uses double quotes (matching sample format).
+    """
+
+    def increase_indent(self, flow: bool = False, indentless: bool = False):
+        """Increase indent to 4 spaces for lists."""
+        return super().increase_indent(flow, False)
+
+
 # Custom YAML representer for better formatting
 def _str_representer(dumper: yaml.Dumper, data: str) -> yaml.Node:
     """Custom string representer for multiline strings and empty strings."""
@@ -73,9 +86,24 @@ def _str_representer(dumper: yaml.Dumper, data: str) -> yaml.Node:
         # Use double quotes for empty strings to match sample format
         return dumper.represent_scalar("tag:yaml.org,2002:str", data, style='"')
     else:
-        # Default style for regular strings
+        # Use double quotes for strings that need quoting, plain style otherwise
+        # Let YAML decide but prefer double quotes when quoting is needed
+        if dumper.default_style:
+            return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=dumper.default_style)
+        # Check if the string needs quoting (is a YAML keyword or contains special chars)
+        if data.lower() in ('yes', 'no', 'true', 'false', 'null', 'on', 'off'):
+            return dumper.represent_scalar("tag:yaml.org,2002:str", data, style='"')
         return dumper.represent_scalar("tag:yaml.org,2002:str", data)
 
 
-# Register custom representer
-yaml.add_representer(str, _str_representer)
+def _list_representer(dumper: yaml.Dumper, data: list) -> yaml.Node:
+    """Custom list representer to handle empty lists."""
+    if not data:
+        # Represent empty lists as empty arrays
+        return dumper.represent_list([])
+    return dumper.represent_list(data)
+
+
+# Register custom representers
+CustomDumper.add_representer(str, _str_representer)
+CustomDumper.add_representer(list, _list_representer)

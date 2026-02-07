@@ -19,6 +19,7 @@ class SearchResult(BaseModel):
     url: str
     image_url: str = ""
     announced: Optional[str] = None
+    short_specs: List[str] = Field(default_factory=list)
 
 
 class Camera(BaseModel):
@@ -36,10 +37,15 @@ class Camera(BaseModel):
     ReviewData: _ReviewDataType = Field(default_factory=_ReviewDataType)
     Specs: _CameraSpecsType = Field(default_factory=_CameraSpecsType)
 
+    # Internal fields (not written to YAML)
+    review_url: Optional[str] = Field(default=None, exclude=True)
+
     def to_yaml_dict(self) -> dict:
         """Convert to dict preserving field order for YAML output."""
+        import re
+
         def make_relative_url(url: str) -> str:
-            """Convert absolute URL to relative path."""
+            """Convert absolute URL to relative path and remove size parameters."""
             if not url:
                 return url
             # Strip domain from DPReview URLs
@@ -52,7 +58,10 @@ class Camera(BaseModel):
                 "https://4.img-dpreview.com",
             ]:
                 if url.startswith(domain):
-                    return url[len(domain):]
+                    url = url[len(domain):]
+                    break
+            # Remove thumbnail size parameters (e.g., TS375x375~, TS40x40~)
+            url = re.sub(r'TS\d+x\d+~', '', url)
             return url
 
         data = {
@@ -74,6 +83,6 @@ class Camera(BaseModel):
                 },
                 "ASIN": self.ReviewData.ASIN,
             },
-            "Specs": self.Specs.model_dump(exclude_none=False),
+            "Specs": dict(sorted(self.Specs.model_dump(exclude_none=False).items())),
         }
         return data

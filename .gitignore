@@ -31,3 +31,6 @@ tests/fixtures/*.html
 
 # Playwright
 .playwright/
+
+# Claude
+.claude/

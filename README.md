@@ -62,7 +62,7 @@ uv run dpreview-scraper scrape [OPTIONS]
 - `--limit, -l N` - Maximum number of cameras to scrape
 - `--headless/--no-headless` - Run browser in headless mode (default: headless)
 - `--verbose, -v` - Enable verbose logging
-- `--archive` - Fetch Wayback Machine archive URLs
+- `--archive/--no-archive` - Fetch Wayback Machine archive URLs (default: enabled)
 - `--resume/--no-resume` - Resume from previous progress (default: resume)
 
 **Examples:**
@@ -74,8 +74,8 @@ uv run dpreview-scraper scrape
 # Scrape with visible browser for debugging
 uv run dpreview-scraper scrape --no-headless --verbose
 
-# Scrape recent cameras with archive URLs
-uv run dpreview-scraper scrape --after 2024-06-01 --archive
+# Scrape recent cameras without archive URLs (faster)
+uv run dpreview-scraper scrape --after 2024-06-01 --no-archive
 
 # Scrape limited number for testing
 uv run dpreview-scraper scrape --limit 5
@@ -95,6 +95,42 @@ uv run dpreview-scraper list-cameras [OPTIONS]
 - `--limit, -l N` - Maximum number to list
 - `--headless/--no-headless` - Browser mode
 - `--verbose, -v` - Verbose logging
+
+### Backfill Archives Command
+
+Add or update Wayback Machine archive URLs to existing YAML files without re-scraping:
+
+```bash
+uv run dpreview-scraper backfill-archives <directory> [OPTIONS]
+```
+
+**Options:**
+
+- `--create-if-missing` - Create new Wayback Machine archives if none exist (slower, but ensures all cameras have archives)
+- `--verbose, -v` - Verbose logging
+
+**Examples:**
+
+```bash
+# Add archive URLs to existing YAML files (lookup only)
+uv run dpreview-scraper backfill-archives output/
+
+# Create new archives for cameras that don't have them yet
+uv run dpreview-scraper backfill-archives output/ --create-if-missing
+
+# Verbose mode to see progress
+uv run dpreview-scraper backfill-archives output/ --verbose
+```
+
+**Use cases:**
+
+- You scraped cameras with `--no-archive` and want to add archives later
+- Archive URLs failed during initial scrape
+- You want to update existing YAML files without re-scraping camera data
+
+**Performance:**
+- Lookup only: ~2-3 minutes for 85 cameras
+- With `--create-if-missing`: ~3-6 minutes first run, ~2-3 minutes on re-runs (archives already exist)
 
 ### Validate Command
 
@@ -226,7 +262,20 @@ Use `--no-resume` to start fresh.
 
 ### Wayback Machine Integration
 
-The `--archive` flag fetches Wayback Machine URLs for review pages. This is useful for preserving review content as DPReview may update or remove pages.
+Archive URLs are **enabled by default** during scraping. The scraper fetches existing Wayback Machine snapshots for review pages.
+
+**During scraping:**
+- `--archive` (default) - Fetch existing archive URLs
+- `--no-archive` - Skip archive fetching (faster)
+
+**After scraping:**
+- Use `backfill-archives` command to add/update archive URLs without re-scraping
+- Use `--create-if-missing` flag to create new archives for cameras that don't have them
+
+**Why archive URLs?**
+- Preserves review content in case DPReview updates or removes pages
+- Provides a permanent, timestamped snapshot of reviews
+- Useful for historical reference and data integrity
 
 ## Troubleshooting
 

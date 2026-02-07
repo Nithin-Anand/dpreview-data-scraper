@@ -70,7 +70,20 @@ The scraper generates YAML files (see `sample_data/fujifilm_xpro3.yaml`) with th
 
 **Run the scraper:**
 ```bash
-uv run python main.py
+# Scrape cameras (archive URLs enabled by default)
+uv run dpreview-scraper scrape
+
+# Scrape with options
+uv run dpreview-scraper scrape --after 2024-01-01 --limit 10 --no-archive
+
+# Backfill archive URLs to existing YAML files
+uv run dpreview-scraper backfill-archives output/ --create-if-missing
+
+# List available cameras
+uv run dpreview-scraper list-cameras
+
+# Validate YAML output
+uv run dpreview-scraper validate output/
 ```
 
 **Add dependencies:**
@@ -78,30 +91,37 @@ uv run python main.py
 uv add beautifulsoup4 requests playwright  # Example
 ```
 
-**Linting/Formatting:** (Add when tools are configured)
+**Linting/Formatting:**
 ```bash
 uv run ruff check .
 uv run ruff format .
 ```
 
-**Testing:** (Add when tests are implemented)
+**Testing:**
 ```bash
 uv run pytest
 ```
 
 ## Architecture Notes
 
-- The project is currently in early development with a skeleton `main.py`
 - **Primary data source:** DPReview product search page (https://www.dpreview.com/products/cameras/all?view=list)
-  - Paginated results - scraper needs to handle pagination
-  - Site has anti-bot protection (403 errors on simple requests)
-  - Will likely need browser automation (Playwright/Selenium) or sophisticated headers
-- **Secondary requirement:** Archive URLs via Wayback Machine (stored in `DPRReviewArchiveURL` field)
+  - Uses Playwright for browser automation to handle anti-bot protection
+  - Paginated search results with filtering by announcement date
+  - Rate-limited requests with realistic headers and delays
+
+- **Archive functionality:**
+  - Archive URLs are **enabled by default** during scraping
+  - Archives are fetched from Wayback Machine (not created by default for performance)
+  - `backfill-archives` command can add/update archives to existing YAML files without re-scraping
+  - Review URLs are extracted from product pages and stored internally for accurate archive lookup
+
 - **Target date range:** Focus on cameras added after March 2023 (to complement existing open database)
+
 - **Output:** YAML files matching the structure in `sample_data/`
-- The scraper will need to:
-  1. Navigate paginated search results
-  2. Extract product URLs and metadata from search results
-  3. Visit individual product/review pages for detailed specs
-  4. Find or create Wayback Machine archive URLs for reviews
-  5. Normalize data to match the expected YAML schema
+
+- **Key components:**
+  - `SearchScraper`: Extracts camera list from paginated search results
+  - `ProductScraper`: Scrapes individual product and review pages for detailed specs
+  - `ArchiveManager`: Handles Wayback Machine API integration
+  - `YAMLWriter`: Outputs normalized YAML matching database schema
+  - `ProgressTracker`: Enables resumable scraping after interruptions

@@ -55,8 +55,8 @@ def scrape(
         help="Enable verbose logging",
     ),
     archive: bool = typer.Option(
-        False,
-        "--archive",
+        True,
+        "--archive/--no-archive",
         help="Fetch Wayback Machine archive URLs",
     ),
     resume: bool = typer.Option(
@@ -187,9 +187,8 @@ async def _run_scraper(
                         continue
 
                     # Fetch archive URL if requested
-                    if archive_manager:
-                        review_url = f"{settings.base_url}/reviews/{search_result.product_code}-review"
-                        archive_url = await archive_manager.get_archive_url(review_url)
+                    if archive_manager and camera.review_url:
+                        archive_url = await archive_manager.get_archive_url(camera.review_url)
                         if archive_url:
                             camera.DPRReviewArchiveURL = archive_url
 
@@ -258,7 +257,13 @@ async def _list_cameras_async(after: str, limit: Optional[int], headless: bool):
         await browser.start()
 
         search_scraper = SearchScraper(browser, rate_limiter, after_date=after)
-        results = await search_scraper.scrape_all_pages()
+
+        # Calculate max_pages based on limit to avoid unnecessary searching
+        max_pages = None
+        if limit:
+            max_pages = (limit // 50) + 2  # +2 for buffer after date filtering
+
+        results = await search_scraper.scrape_all_pages(max_pages=max_pages)
 
         if limit:
             results = results[:limit]
@@ -419,6 +424,162 @@ async def _dump_html_async(output_dir: Path, product_url: Optional[str], headles
 
     finally:
         await browser.stop()
+
+
+@app.command()
+def backfill_archives(
+    directory: Path = typer.Argument(
+        ...,
+        help="Directory containing YAML files to update",
+    ),
+    create_if_missing: bool = typer.Option(
+        False,
+        "--create-if-missing",
+        help="Create new Wayback Machine archives if none exist",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging",
+    ),
+):
+    """Add or update Wayback Machine archive URLs in existing YAML files."""
+    setup_logging(verbose)
+
+    if not directory.exists():
+        console.print(f"[red]Directory not found: {directory}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[bold blue]Backfilling Archive URLs[/bold blue]")
+    console.print(f"Directory: {directory}")
+    console.print(f"Create if missing: {create_if_missing}")
+    console.print()
+
+    asyncio.run(_backfill_archives_async(directory, create_if_missing))
+
+
+async def _backfill_archives_async(directory: Path, create_if_missing: bool):
+    """Async implementation of backfill-archives command."""
+    import yaml
+    from dpreview_scraper.models.camera import Camera
+
+    # Find all YAML files
+    yaml_files = list(directory.glob("*.yaml"))
+
+    if not yaml_files:
+        console.print(f"[yellow]No YAML files found in {directory}[/yellow]")
+        return
+
+    console.print(f"Found {len(yaml_files)} YAML files")
+
+    # Initialize archive manager
+    archive_manager = ArchiveManager()
+
+    try:
+        updated = 0
+        skipped = 0
+        failed = 0
+        needs_archive = []
+
+        # First pass: identify files needing archives
+        console.print("[bold]Scanning files...[/bold]")
+        for yaml_file in yaml_files:
+            try:
+                with open(yaml_file) as f:
+                    data = yaml.safe_load(f)
+
+                camera = Camera(**data)
+
+                # Check if archive URL is missing or empty
+                if not camera.DPRReviewArchiveURL or camera.DPRReviewArchiveURL.strip() == "":
+                    needs_archive.append((yaml_file, camera))
+                else:
+                    skipped += 1
+
+            except Exception as e:
+                logger.error(f"Error reading {yaml_file.name}: {e}")
+                failed += 1
+
+        if not needs_archive:
+            console.print("[green]All files already have archive URLs![/green]")
+            console.print(f"Skipped: {skipped}")
+            return
+
+        console.print(f"Files needing archives: {len(needs_archive)}")
+        console.print(f"Files with archives: {skipped}")
+        console.print()
+
+        # Second pass: fetch and update archives
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Fetching archives...", total=len(needs_archive)
+            )
+
+            for yaml_file, camera in needs_archive:
+                try:
+                    # Reconstruct review URL (pattern: /reviews/{product_code}-review)
+                    review_url = f"{settings.base_url}/reviews/{camera.ProductCode}-review"
+
+                    # Fetch or create archive
+                    if create_if_missing:
+                        archive_url = await archive_manager.get_or_create_archive(
+                            review_url, create_if_missing=True
+                        )
+                    else:
+                        archive_url = await archive_manager.get_archive_url(review_url)
+
+                    if archive_url:
+                        # Update camera object
+                        camera.DPRReviewArchiveURL = archive_url
+
+                        # Write back to YAML
+                        yaml_data = camera.to_yaml_dict()
+                        with open(yaml_file, "w") as f:
+                            yaml.dump(
+                                yaml_data,
+                                f,
+                                default_flow_style=False,
+                                allow_unicode=True,
+                                sort_keys=False,
+                                width=float("inf"),
+                            )
+
+                        logger.info(f"Updated {yaml_file.name} with archive URL")
+                        updated += 1
+                    else:
+                        logger.warning(f"No archive found for {camera.ProductCode}")
+                        failed += 1
+
+                except Exception as e:
+                    logger.error(f"Error updating {yaml_file.name}: {e}")
+                    failed += 1
+
+                progress.advance(task)
+
+        # Print summary
+        console.print()
+        console.print("[bold green]Backfill complete![/bold green]")
+
+        table = Table(title="Results")
+        table.add_column("Status", style="cyan")
+        table.add_column("Count", style="green")
+
+        table.add_row("Updated", str(updated))
+        table.add_row("Skipped (already had archives)", str(skipped))
+        table.add_row("Failed", str(failed))
+        table.add_row("Total", str(len(yaml_files)))
+
+        console.print(table)
+
+    finally:
+        await archive_manager.close()
 
 
 @app.command()

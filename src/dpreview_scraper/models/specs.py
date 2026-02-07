@@ -114,7 +114,7 @@ class CameraSpecs(BaseModel):
     # Shooting
     CIPAImageStabilizationRating: str = ""
     ContinuousDrive: str = ""
-    DriveModes: str = ""
+    DriveModes: List[str] = Field(default_factory=list)
     ImageStabilization: str = ""
     ImageStabilizationNotes: str = ""
     LiveView: str = ""
