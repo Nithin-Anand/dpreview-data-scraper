@@ -1,321 +1,204 @@
 # DPReview Camera Data Scraper
 
-A Python-based web scraper for extracting camera specifications and review data from [DPReview](https://www.dpreview.com). Outputs structured YAML files for contribution to open camera databases.
+[![CI](https://github.com/YOUR_USERNAME/dpreview-data-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/dpreview-data-scraper/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+A Python scraper that extracts camera specifications and review data from [DPReview](https://www.dpreview.com), outputting structured YAML files.
+
+## Why This Exists
+
+DPReview is the most comprehensive camera review database on the web, but there's no public API for accessing its structured data. The [Open Camera Database](https://github.com/open-camera-database) has curated camera data through March 2023 but stopped receiving updates.
+
+This tool fills the gap by scraping DPReview product pages and producing YAML files in the same schema the open database uses, covering cameras announced from March 2023 onward.
 
 ## Features
 
 - **Automated scraping** of DPReview's camera product database
-- **Comprehensive data extraction** including specs, reviews, and product photos
+- **Comprehensive data extraction** -- specs, reviews, product photos, Amazon ASINs
 - **Wayback Machine integration** for archiving review URLs
-- **Resume capability** with progress tracking
-- **Rate limiting** and anti-detection measures
-- **YAML output** matching standardized camera database schema
+- **Resume capability** with progress tracking (interrupted scrapes pick up where they left off)
+- **Rate limiting** with token-bucket algorithm and human-like jitter
+- **YAML output** matching the Open Camera Database schema
 
 ## Installation
 
-Requires Python 3.12+. This project uses `uv` for dependency management.
+Requires Python 3.12+ and [`uv`](https://docs.astral.sh/uv/) for dependency management.
 
 ```bash
-# Clone the repository
-git clone <repository-url>
+git clone https://github.com/YOUR_USERNAME/dpreview-data-scraper.git
 cd dpreview-data-scraper
 
-# Install dependencies using uv
 uv sync
-
-# Install Playwright browser
 uv run playwright install chromium
 ```
-
-> **⚠️ Important:** Before first use, you must update HTML selectors in the parser files to match DPReview's actual site structure. See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed setup instructions.
 
 ## Quick Start
 
 ```bash
-# Scrape cameras announced after March 2023
+# Scrape cameras announced after March 2023 (default)
 uv run dpreview-scraper scrape
 
-# List available cameras without full scrape
+# List available cameras without scraping
 uv run dpreview-scraper list-cameras
 
-# Scrape with custom options
+# Scrape with options
 uv run dpreview-scraper scrape --output ./data --after 2024-01-01 --limit 10
 
-# Show help
+# Show all commands
 uv run dpreview-scraper --help
 ```
 
-## Usage
+## Commands
 
-### Scrape Command
+### `scrape`
 
-The main command to scrape camera data:
+The main scraping command:
 
 ```bash
 uv run dpreview-scraper scrape [OPTIONS]
 ```
 
-**Options:**
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--output, -o` | `output/` | Output directory for YAML files |
+| `--after, -a` | `2023-03-01` | Only scrape cameras announced after this date |
+| `--limit, -l` | unlimited | Maximum number of cameras to scrape |
+| `--headless/--no-headless` | headless | Browser visibility (use `--no-headless` for debugging) |
+| `--verbose, -v` | off | Enable debug logging |
+| `--archive/--no-archive` | enabled | Fetch Wayback Machine archive URLs |
+| `--resume/--no-resume` | enabled | Resume from previous progress |
 
-- `--output, -o PATH` - Output directory for YAML files (default: `output/`)
-- `--after, -a DATE` - Only scrape cameras announced after this date (default: `2023-03-01`)
-- `--limit, -l N` - Maximum number of cameras to scrape
-- `--headless/--no-headless` - Run browser in headless mode (default: headless)
-- `--verbose, -v` - Enable verbose logging
-- `--archive/--no-archive` - Fetch Wayback Machine archive URLs (default: enabled)
-- `--resume/--no-resume` - Resume from previous progress (default: resume)
+### `list-cameras`
 
-**Examples:**
+Preview available cameras without performing a full scrape.
 
-```bash
-# Basic scrape with defaults
-uv run dpreview-scraper scrape
-
-# Scrape with visible browser for debugging
-uv run dpreview-scraper scrape --no-headless --verbose
-
-# Scrape recent cameras without archive URLs (faster)
-uv run dpreview-scraper scrape --after 2024-06-01 --no-archive
-
-# Scrape limited number for testing
-uv run dpreview-scraper scrape --limit 5
-```
-
-### List Cameras Command
-
-Preview available cameras without full scraping:
-
-```bash
-uv run dpreview-scraper list-cameras [OPTIONS]
-```
-
-**Options:**
-
-- `--after, -a DATE` - Filter by announcement date
-- `--limit, -l N` - Maximum number to list
-- `--headless/--no-headless` - Browser mode
-- `--verbose, -v` - Verbose logging
-
-### Backfill Archives Command
+### `backfill-archives`
 
 Add or update Wayback Machine archive URLs to existing YAML files without re-scraping:
 
 ```bash
-uv run dpreview-scraper backfill-archives <directory> [OPTIONS]
-```
-
-**Options:**
-
-- `--create-if-missing` - Create new Wayback Machine archives if none exist (slower, but ensures all cameras have archives)
-- `--verbose, -v` - Verbose logging
-
-**Examples:**
-
-```bash
-# Add archive URLs to existing YAML files (lookup only)
+# Lookup existing archives
 uv run dpreview-scraper backfill-archives output/
 
-# Create new archives for cameras that don't have them yet
+# Also create new archives for cameras that don't have them
 uv run dpreview-scraper backfill-archives output/ --create-if-missing
-
-# Verbose mode to see progress
-uv run dpreview-scraper backfill-archives output/ --verbose
 ```
 
-**Use cases:**
+### `validate`
 
-- You scraped cameras with `--no-archive` and want to add archives later
-- Archive URLs failed during initial scrape
-- You want to update existing YAML files without re-scraping camera data
+Validate YAML output files for schema compliance.
 
-**Performance:**
-- Lookup only: ~2-3 minutes for 85 cameras
-- With `--create-if-missing`: ~3-6 minutes first run, ~2-3 minutes on re-runs (archives already exist)
+### `clear-progress`
 
-### Validate Command
-
-Validate YAML output files:
-
-```bash
-uv run dpreview-scraper validate <directory>
-```
-
-### Clear Progress
-
-Clear saved scraping progress:
-
-```bash
-uv run dpreview-scraper clear-progress
-```
+Clear saved scraping progress to start fresh.
 
 ## Output Format
 
-The scraper generates YAML files following this structure (see `sample_data/fujifilm_xpro3.yaml` for a complete example):
+Each camera produces a YAML file like this (see `sample_data/` for complete examples):
 
 ```yaml
 DPRReviewArchiveURL: https://web.archive.org/web/...
-ProductCode: fujifilm_xpro3
-Award: silver
-ImageURL: /files/p/products/fujifilm_xpro3/...
-Name: Fujifilm X-Pro3
+ProductCode: sony_fx30
+Award: ""
+ImageURL: /files/p/products/sony_fx30/04ab576b...png
+Name: Sony FX30
 ShortSpecs:
     - 26 megapixels
     - 3″ screen
     - APS-C sensor
-ReviewScore: 85
-URL: /products/fujifilm/slrs/fujifilm_xpro3
+ReviewScore: 0
+URL: /products/sony/slrs/sony_fx30
 ReviewData:
-    ExecutiveSummary: "..."
-    ProductPhotos: [...]
-    ReviewSummary:
-        GoodFor: "..."
-        NotSoGoodFor: "..."
-        Conclusion: "..."
-    ASIN: [...]
+    ExecutiveSummary: 'The compact, very accessible FX30...'
+    ProductPhotos:
+        - /files/p/products/sony_fx30/shots/184e70fa...png
+    ReviewSummary: null
+    ASIN:
+        - B0BKLQFFSF
 Specs:
-    Announced: Oct 23, 2019
-    BodyType: Rangefinder-style mirrorless
+    Announced: Sep 28, 2022
+    AperturePriority: "Yes"
+    Autofocus:
+        - Phase Detect
+        - Multi-area
+        - Tracking
+    BodyType: SLR-style mirrorless
     SensorType: BSI-CMOS
     # ... 70+ additional spec fields
 ```
 
 ## Configuration
 
-Environment variables can be set via a `.env` file or shell exports. All variables use the `DPREVIEW_` prefix:
+All settings can be controlled via environment variables (prefix `DPREVIEW_`) or a `.env` file:
 
-```bash
-# Rate limiting (requests per minute)
-DPREVIEW_RATE_LIMIT_PER_MINUTE=20
-
-# Browser timeout (milliseconds)
-DPREVIEW_BROWSER_TIMEOUT=30000
-
-# Output directory
-DPREVIEW_OUTPUT_DIR=./output
-
-# Logging
-DPREVIEW_LOG_LEVEL=INFO
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DPREVIEW_RATE_LIMIT_PER_MINUTE` | `20` | Max requests per minute |
+| `DPREVIEW_BROWSER_TIMEOUT` | `30000` | Browser navigation timeout (ms) |
+| `DPREVIEW_OUTPUT_DIR` | `./output` | Default output directory |
+| `DPREVIEW_LOG_LEVEL` | `INFO` | Logging level |
 
 ## Development
 
-> **📖 See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed setup instructions, next steps, and troubleshooting.**
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full development setup and guidelines.
+
+```bash
+# Install with dev dependencies
+uv sync --dev
+
+# Run tests
+uv run python -m pytest
+
+# Lint and format
+uv run ruff check .
+uv run ruff format .
+```
 
 ### Project Structure
 
 ```
-dpreview-data-scraper/
-├── src/dpreview_scraper/
-│   ├── models/          # Pydantic data models
-│   ├── scraper/         # Browser automation & scrapers
-│   ├── parsers/         # HTML parsing
-│   ├── storage/         # YAML output & progress tracking
-│   └── utils/           # Rate limiting, logging
-├── sample_data/         # Example YAML output
-└── tests/               # Test suite
+src/dpreview_scraper/
+├── cli.py               # CLI commands (typer)
+├── config.py            # Settings and environment variables
+├── models/              # Pydantic data models (camera, review, specs)
+├── scraper/             # Browser automation
+│   ├── browser.py       # Playwright browser management
+│   ├── search.py        # Search page scraper
+│   ├── product.py       # Product page scraper
+│   ├── stealth.py       # Anti-detection & Cloudflare handling
+│   └── archive.py       # Wayback Machine integration
+├── parsers/             # HTML parsing (no browser dependency)
+│   ├── product_parser.py  # Orchestrator
+│   ├── metadata_parser.py # Name, image, award extraction
+│   ├── specs_parser.py    # Technical specifications
+│   ├── review_parser.py   # Review data extraction
+│   ├── search_parser.py   # Search result parsing
+│   └── parse_utils.py     # Shared regex and text utilities
+├── storage/             # Output handling
+│   ├── yaml_writer.py   # YAML file output
+│   └── progress.py      # Resume tracking
+└── utils/
+    ├── logging.py       # Logging setup
+    └── rate_limiter.py  # Token bucket rate limiter
 ```
-
-### Running Tests
-
-```bash
-# Install dev dependencies
-uv sync --dev
-
-# Run tests
-uv run pytest
-
-# Run with coverage
-uv run pytest --cov=dpreview_scraper
-```
-
-### Code Quality
-
-```bash
-# Format code
-uv run ruff format .
-
-# Lint
-uv run ruff check .
-
-# Type check
-uv run mypy src/
-```
-
-## Technical Details
-
-### Anti-Detection Measures
-
-- Realistic browser headers and viewport
-- JavaScript-based navigator.webdriver masking
-- Token bucket rate limiting with jitter
-- Human-like delays between requests
-
-### Resumability
-
-Progress is tracked in `.scrape_progress.json`. If scraping is interrupted:
-
-1. Run the same command again
-2. Already scraped cameras are automatically skipped
-3. Scraping continues from where it left off
-
-Use `--no-resume` to start fresh.
-
-### Wayback Machine Integration
-
-Archive URLs are **enabled by default** during scraping. The scraper fetches existing Wayback Machine snapshots for review pages.
-
-**During scraping:**
-- `--archive` (default) - Fetch existing archive URLs
-- `--no-archive` - Skip archive fetching (faster)
-
-**After scraping:**
-- Use `backfill-archives` command to add/update archive URLs without re-scraping
-- Use `--create-if-missing` flag to create new archives for cameras that don't have them
-
-**Why archive URLs?**
-- Preserves review content in case DPReview updates or removes pages
-- Provides a permanent, timestamped snapshot of reviews
-- Useful for historical reference and data integrity
 
 ## Troubleshooting
 
-**403 Errors:**
-- DPReview has anti-bot protection. The scraper uses browser automation to handle this.
-- If issues persist, reduce rate limit: `DPREVIEW_RATE_LIMIT_PER_MINUTE=10`
+**403 Errors:** DPReview has anti-bot protection. The scraper uses Playwright with stealth mode to handle this. If issues persist, reduce rate limit: `DPREVIEW_RATE_LIMIT_PER_MINUTE=10`
 
-**Timeout Errors:**
-- Increase browser timeout: `DPREVIEW_BROWSER_TIMEOUT=60000`
-- Use `--no-headless` to observe browser behavior
+**Timeout Errors:** Increase browser timeout: `DPREVIEW_BROWSER_TIMEOUT=60000`. Use `--no-headless` to observe browser behavior.
 
-**Missing Data:**
-- Some cameras may have incomplete specifications on DPReview
-- All spec fields default to empty strings if not found
-- Check logs with `--verbose` to see parsing warnings
+**Missing Data:** Some cameras have incomplete specs on DPReview. All fields default to empty strings. Use `--verbose` to see parsing warnings.
 
-**Playwright Issues:**
-- Ensure Playwright is installed: `uv run playwright install chromium`
-- On some systems you may need: `uv run playwright install-deps`
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure code passes linting and formatting
-5. Submit a pull request
+**Playwright Issues:** Ensure browser is installed: `uv run playwright install chromium`. On Linux you may also need: `uv run playwright install-deps`.
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Acknowledgments
-
-- Data sourced from [DPReview](https://www.dpreview.com)
-- Built for contribution to open camera databases
-- Uses [Playwright](https://playwright.dev/) for browser automation
+MIT License -- see [LICENSE](LICENSE) for details.
 
 ## Disclaimer
 
-This tool is for educational purposes and personal use. Please respect DPReview's terms of service and robots.txt. Use reasonable rate limiting and do not overload their servers.
+This tool is for personal and educational use. It scrapes publicly available data from DPReview. Please use reasonable rate limiting and do not overload their servers. The authors are not responsible for misuse.
+
+DPReview content is the property of its respective owners. This tool does not redistribute copyrighted content -- it extracts structured metadata (specifications, scores, URLs) for personal database use.
