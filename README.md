@@ -12,6 +12,12 @@ DPReview is the most comprehensive camera review database on the web, but there'
 
 This tool fills the gap by scraping DPReview product pages and producing YAML files in the same schema the open database uses, covering cameras announced from March 2023 onward.
 
+## Caveats
+
+This is a tool I developed using substantial AI-assistance, as I was more focused on the output (remediating gaps in the open-camera-data repository) than the scraper quality itself. Code is provided as-is, with fairly minimal oversight over the code generation.Eventually I would like to clean up this code, and would welcome contributions.
+
+The code is provided in good faith. Please honour DPReview's terms of service and copyright. Their site is a valuable resource for camera fans (as seen by the reaction to Amazon's proposed shutdown in 2023) which should be used respectfully.
+
 ## Features
 
 - **Automated scraping** of DPReview's camera product database
